@@ -47,9 +47,7 @@ export default function TodoApp() {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) {
         const parsed = JSON.parse(saved)
-        if (parsed.expiry && new Date().getTime() > parsed.expiry) {
-          localStorage.removeItem(STORAGE_KEY)
-        } else if (parsed.tasks) {
+        if (parsed.tasks) {
           setTasks(parsed.tasks)
         } else if (Array.isArray(parsed)) {
           setTasks(parsed)
@@ -62,8 +60,7 @@ export default function TodoApp() {
   const save = useCallback((newTasks) => {
     try {
       const data = {
-        tasks: newTasks,
-        expiry: new Date().getTime() + 8 * 60 * 60 * 1000
+        tasks: newTasks
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     } catch {}
