@@ -43,3 +43,45 @@ Buka [http://localhost:3000](http://localhost:3000)
 - Reset semua task dengan konfirmasi
 - Dark mode otomatis
 - Data tersimpan di localStorage
+- Task yang dicentang tersinkron ke Google Sheets
+
+## Integrasi Google Sheets
+
+Integrasi ini menggunakan Google Apps Script sebagai webhook. Setiap task yang dicentang akan dibuat atau diperbarui di Google Sheets. Penghapusan dan reset task tidak menghapus data di Sheet.
+
+### 1. Siapkan Google Sheet
+
+Buat spreadsheet dan isi baris pertama pada tab pertama dengan header berikut:
+
+```text
+Todo ID | Todo | Updated At
+```
+
+### 2. Buat Google Apps Script
+
+Di spreadsheet, buka **Extensions → Apps Script**, lalu salin isi file `scripts/Code.gs` ke editor Apps Script.
+
+Buka **Project Settings → Script Properties**, lalu tambahkan:
+
+- Property: `WEBHOOK_SECRET`
+- Value: secret acak yang panjang
+
+Deploy sebagai **Web app** dengan pengaturan:
+
+- Execute as: **Me**
+- Who has access: **Anyone**
+
+Salin URL deployment yang berakhiran `/exec`.
+
+### 3. Konfigurasi aplikasi
+
+Salin `.env.example` menjadi `.env.local` untuk development, lalu isi:
+
+```env
+GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/your-deployment-id/exec
+GOOGLE_SHEETS_WEBHOOK_SECRET=secret-yang-sama-dengan-script-properties
+```
+
+Untuk Vercel, tambahkan kedua variable tersebut di **Project Settings → Environment Variables**, lalu lakukan redeploy.
+
+Secret diteruskan dari API server ke Apps Script sehingga tidak terekspos di browser.

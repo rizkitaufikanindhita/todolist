@@ -40,7 +40,10 @@ export default function TodoApp() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [confirmClosing, setConfirmClosing] = useState(false)
   const [hoveredId, setHoveredId] = useState(null)
+  const [syncingId, setSyncingId] = useState(null)
+  const [syncError, setSyncError] = useState('')
   const inputRef = useRef(null)
+  const tasksRef = useRef([])
 
   useEffect(() => {
     try {
@@ -48,8 +51,10 @@ export default function TodoApp() {
       if (saved) {
         const parsed = JSON.parse(saved)
         if (parsed.tasks) {
+          tasksRef.current = parsed.tasks
           setTasks(parsed.tasks)
         } else if (Array.isArray(parsed)) {
+          tasksRef.current = parsed
           setTasks(parsed)
         }
       }
@@ -66,25 +71,61 @@ export default function TodoApp() {
     } catch {}
   }, [])
 
+  const setTaskList = useCallback((newTasks) => {
+    tasksRef.current = newTasks
+    setTasks(newTasks)
+    save(newTasks)
+  }, [save])
+
   const addTask = () => {
     const text = input.trim()
     if (!text) return
-    const newTasks = [...tasks, { id: uid(), text, done: false }]
-    setTasks(newTasks)
-    save(newTasks)
+    const newTasks = [...tasksRef.current, { id: uid(), text, done: false }]
+    setTaskList(newTasks)
     setInput('')
   }
 
-  const toggleTask = (id) => {
-    const newTasks = tasks.map(t => t.id === id ? { ...t, done: !t.done } : t)
-    setTasks(newTasks)
-    save(newTasks)
+  const toggleTask = async (id) => {
+    const task = tasksRef.current.find(t => t.id === id)
+    if (!task || syncingId) return
+
+    setSyncError('')
+
+    if (task.done) {
+      const newTasks = tasksRef.current.map(t => t.id === id ? { ...t, done: false } : t)
+      setTaskList(newTasks)
+      return
+    }
+
+    setSyncingId(id)
+
+    try {
+      const response = await fetch('/api/todos/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          todoId: task.id,
+          text: task.text,
+        }),
+      })
+      const result = await response.json().catch(() => null)
+
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Google Sheets tidak merespons.')
+      }
+
+      const newTasks = tasksRef.current.map(t => t.id === id ? { ...t, done: true } : t)
+      setTaskList(newTasks)
+    } catch {
+      setSyncError('Gagal menyimpan ke Google Sheets. Coba checklist lagi.')
+    } finally {
+      setSyncingId(null)
+    }
   }
 
   const deleteTask = (id) => {
-    const newTasks = tasks.filter(t => t.id !== id)
-    setTasks(newTasks)
-    save(newTasks)
+    const newTasks = tasksRef.current.filter(t => t.id !== id)
+    setTaskList(newTasks)
   }
 
   const handleReset = () => {
@@ -93,8 +134,7 @@ export default function TodoApp() {
   }
 
   const confirmReset = () => {
-    setTasks([])
-    save([])
+    setTaskList([])
     closeConfirm()
   }
 
@@ -313,6 +353,21 @@ export default function TodoApp() {
       padding: 0,
       transition: 'opacity 0.15s',
     },
+    errorToast: {
+      position: 'fixed',
+      bottom: 28,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: 'var(--toast-bg)',
+      color: 'var(--toast-text)',
+      borderRadius: 8,
+      padding: '11px 20px',
+      fontSize: 12,
+      fontFamily: 'var(--font-mono)',
+      letterSpacing: '0.04em',
+      zIndex: 100,
+      whiteSpace: 'nowrap',
+    },
   }
 
   if (!mounted) return null
@@ -361,12 +416,17 @@ export default function TodoApp() {
               onMouseLeave={() => setHoveredId(null)}
             >
               <div
-                style={s.checkbox(task.done)}
-                onClick={() => toggleTask(task.id)}
+                style={{
+                  ...s.checkbox(task.done),
+                  cursor: syncingId ? 'wait' : 'pointer',
+                  opacity: syncingId === task.id ? 0.5 : 1,
+                }}
+                onClick={() => !syncingId && toggleTask(task.id)}
                 role="checkbox"
                 aria-checked={task.done}
+                aria-busy={syncingId === task.id}
                 tabIndex={0}
-                onKeyDown={e => e.key === ' ' && toggleTask(task.id)}
+                onKeyDown={e => e.key === ' ' && !syncingId && toggleTask(task.id)}
               >
                 {task.done && <CheckIcon />}
               </div>
@@ -375,7 +435,7 @@ export default function TodoApp() {
               </div>
               <button
                 style={s.deleteBtn(hoveredId === task.id)}
-                onClick={() => deleteTask(task.id)}
+                onClick={() => !syncingId && deleteTask(task.id)}
                 title="Hapus task"
                 onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
                 onMouseLeave={e => e.currentTarget.style.color = 'var(--ink3)'}
@@ -398,8 +458,9 @@ export default function TodoApp() {
             {total > 0 ? `${total} task` : ''}
           </span>
           <button
-            style={s.resetBtn}
+            style={{ ...s.resetBtn, opacity: syncingId ? 0.4 : 1, cursor: syncingId ? 'wait' : 'pointer' }}
             onClick={handleReset}
+            disabled={Boolean(syncingId)}
             onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
             onMouseLeave={e => e.currentTarget.style.color = 'var(--ink3)'}
           >
@@ -420,6 +481,12 @@ export default function TodoApp() {
           >
             Batal
           </button>
+        </div>
+      )}
+
+      {syncError && !showConfirm && (
+        <div style={s.errorToast} role="alert">
+          {syncError}
         </div>
       )}
     </>
